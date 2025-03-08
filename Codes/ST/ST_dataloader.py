@@ -5,7 +5,7 @@ from torch.utils import data
 from typing import List
 
 
-class JGC_MMN_dataloader(data.Dataset):
+class ST_dataloader(data.Dataset):
     def __init__(
         self,
         name: List[str],
@@ -22,8 +22,9 @@ class JGC_MMN_dataloader(data.Dataset):
         for m in range(self.modalities):
             cur_path = os.path.join(self.root, self.name[m])
             cur_data = np.load(cur_path)
-            _, c, _, _ = cur_data.shape
             self.np_data.append(cur_data.astype(np.float32))
+            if m != self.modalities - 1:
+                _, c, _, _ = cur_data.shape
             # add min and max value of mean price and transaction count
             if m == 0 or m == 1:
                 price = cur_data[:, :c//2, :, :]
@@ -37,7 +38,7 @@ class JGC_MMN_dataloader(data.Dataset):
             elif m == 2:
                 self.global_min.append([np.min(cur_data[:, i, :, :]) for i in range(c)])
                 self.global_max.append([np.max(cur_data[:, i, :, :]) for i in range(c)])
-            else:
+            elif m == 3 or m == 4:
                 self.global_min.append([np.min(cur_data)])
                 self.global_max.append([np.max(cur_data)])
 
@@ -54,7 +55,7 @@ class JGC_MMN_dataloader(data.Dataset):
     
     def __getitem__(self, index):
         modalities_data = []
-        for m in range(self.modalities):
+        for m in range(self.modalities - 2):
             # get sample, shape: (c, h, w)
             sample = self.np_data[m][index]
             c, h, w = sample.shape
@@ -75,20 +76,22 @@ class JGC_MMN_dataloader(data.Dataset):
                 normalized_tensor = self.normalized(sample, self.global_min[m][0], self.global_max[m][0])
             # convert numpy arrays into tensors
             tensor = torch.from_numpy(normalized_tensor)
-            modalities_data.append(tensor)
+            modalities_data.append(tensor.unsqueeze(0))
+        normalized_label_tensor = self.normalized(self.np_data[-2][index], self.global_min[-1][0], self.global_max[-1][0])
+        modalities_data.append(torch.from_numpy(normalized_label_tensor))
+        modalities_data.append(torch.from_numpy(self.np_data[-1]).unsqueeze(0))
         return modalities_data
 
 
 if __name__ == "__main__":
-    dataset = JGC_MMN_dataloader(
-        name=["long_term.npy", "short_term.npy", "ingredients.npy", "future.npy", "label.npy"],
-        root="/Users/gunneo/Documents/4_2/Graduation_Thesis/Datasets/NYC_House_Price_Dataset/JGC_MMN/train",
+    train_dataset = ST_dataloader(
+        name=["long_term.npy", "short_term.npy", "ingredients.npy", "future.npy", "label.npy", "mask.npy"],
+        root="/Users/gunneo/Documents/4_2/Graduation_Thesis/Datasets/NYC_House_Price_Dataset/ST/train",
         transaction_cnt=False,
     )
-    dataloader = data.DataLoader(dataset, batch_size=32, shuffle=True)
-    for batch in dataloader:
-        print(batch[0].shape)
-        print(batch[1].shape)
-        print(batch[2].shape)
-        print(batch[3].shape)
-        print(batch[4].shape)
+    train_dataloader = data.DataLoader(train_dataset, batch_size=16, shuffle=True)
+    img_h = train_dataloader.dataset[0][0].shape[-2]
+    img_w = train_dataloader.dataset[0][0].shape[-1]
+    print(train_dataloader.dataset[0][-1].shape)
+
+    print(img_h, img_w)
